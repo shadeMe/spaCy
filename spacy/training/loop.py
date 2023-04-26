@@ -112,6 +112,7 @@ def distill(
     stdout.write(msg.info(f"Initial learn rate: {optimizer.learn_rate(step=0)}") + "\n")
     with student.select_pipes(disable=frozen_components):
         log_step, finalize_logger = train_logger(student, stdout, stderr)
+    init_optimizer(optimizer, student)
     try:
         for batch, info, is_best_checkpoint in training_step_iterator:
             if is_best_checkpoint is not None:
@@ -227,6 +228,7 @@ def train(
     stdout.write(msg.info(f"Initial learn rate: {optimizer.learn_rate(step=0)}") + "\n")
     with nlp.select_pipes(disable=frozen_components):
         log_step, finalize_logger = train_logger(nlp, stdout, stderr)
+    init_optimizer(optimizer, nlp)
     try:
         for batch, info, is_best_checkpoint in training_step_iterator:
             if is_best_checkpoint is not None:
@@ -330,7 +332,7 @@ def _distill_loop(
         if before_update:
             before_update_args = {"step": step, "epoch": epoch}
             before_update(student, before_update_args)
-        dropout = dropouts(optimizer.step)
+        dropout = dropouts(optimizer.current_step)
         for subbatch in subdivide_batch(batch, accumulate_gradient):
             student.distill(
                 teacher,
@@ -351,7 +353,7 @@ def _distill_loop(
                 and student_proc.model not in (False, None)  # type: ignore[attr-defined]
             ):
                 student_proc.finish_update(optimizer)  # type: ignore[attr-defined]
-        optimizer.step_schedules()
+        optimizer.step()
         if not (step % eval_frequency):
             if optimizer.averages:
                 with student.use_params(optimizer.averages):
@@ -447,7 +449,7 @@ def train_while_improving(
         if before_update:
             before_update_args = {"step": step, "epoch": epoch}
             before_update(nlp, before_update_args)
-        dropout = dropouts(optimizer.step)  # type: ignore
+        dropout = dropouts(optimizer.current_step)  # type: ignore
         for subbatch in subdivide_batch(batch, accumulate_gradient):
             nlp.update(
                 subbatch,
@@ -466,7 +468,7 @@ def train_while_improving(
                 and proc.model not in (True, False, None)  # type: ignore[attr-defined]
             ):
                 proc.finish_update(optimizer)  # type: ignore[attr-defined]
-        optimizer.step_schedules()
+        optimizer.step()
         if not (step % eval_frequency):
             if optimizer.averages:
                 with nlp.use_params(optimizer.averages):
@@ -639,3 +641,9 @@ def clean_output_dir(path: Optional[Path]) -> None:
                     logger.debug("Removed existing output directory: %s", subdir)
                 except Exception as e:
                     raise IOError(Errors.E901.format(path=path)) from e
+
+
+def init_optimizer(optimizer: Optimizer, nlp: "Language"):
+    # TODO walkthrough the pipe models, get params and register with the optimizer
+    # TODO add support for custom optimizer options/param
+    pass
